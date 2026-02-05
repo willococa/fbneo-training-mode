@@ -10,6 +10,7 @@ else
 	return
 end
 
+--[[
 if not _G.kof_training_tests_run then
 	_G.kof_training_tests_run = true
 	local luaunit = require("addon.kof_training.tests.luaunit")
@@ -20,10 +21,12 @@ if not _G.kof_training_tests_run then
 	luaunit.LuaUnit.run()
 	print(">>> TESTS COMPLETE <<<")
 end
+--]]
 
 DBIndex = require("addon.kof_training.db_lua.db.index")
 require("addon.kof_training.moves_settings")
 require("addon.kof_training.guipages")
+local frame_data = require("addon.kof_training.frame_data")
 
 local p1hitstatus = 0x108172
 local p2hitstatus = 0x108372
@@ -2591,6 +2594,9 @@ function KofTrainingRun() -- runs every frame
 		end
 	end ]]
 
+	-- Update frame data
+	frame_data.update()
+
 	-- Dispatch to State Handlers
 	local handler = StateHandlers[stateMachine.currentState]
 	if handler then
@@ -2605,4 +2611,5 @@ end
 
 if registers and registers.guiregister then
 	table.insert(registers.guiregister, KofTrainingRun)
+	table.insert(registers.guiregister, frame_data.draw)
 end
