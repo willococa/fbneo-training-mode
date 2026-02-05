@@ -2,4 +2,5 @@
 addons_run = {
 	"missions.lua",
 	"rewind.lua",
+	"kof_training/init.lua",
 }
