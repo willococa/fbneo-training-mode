@@ -12,36 +12,13 @@ if log_file then
     log_file:write("Frame,ActionID,Status,BoxID,State,Startup,Active\n")
 end
 
--- ... (rest of file)
-
-
-
--- ... (rest of file)
-
-local P1_BASE_ADDR = 0x108100
-local P1_OBJ_PTR_LIST = 0x10BF24
-local OFFSET_STATUS = 0x7C
-local P1_ACTION_ADDR = 0x108173 -- p1hitstatus + 1
-local P2_HITSTATUS_ADDR = 0x108372
-local P2_BLOCKSTUN_ADDR = 0x1083E3
-
--- Hitbox Offsets
-local BOX_OFFSETS = {
-    0x90, 0x95, 0x9A, 0x9F
-}
-
+local BOX_OFFSETS = { 0x90, 0x95, 0x9A, 0x9F }
 local BOX_ACTIVE_BITS = {
-    [0x90] = 0,
-    [0x95] = 1,
-    [0x9A] = 2,
-    [0x9F] = 3
+    [0x90] = 0, [0x95] = 1, [0x9A] = 2, [0x9F] = 3
 }
 
--- Boxes to IGNORE (Empty now, because the active_bit check filters them properly!)
-local IGNORED_BOXES = {
-}
-
--- Actions to IGNORE (Idle, walking, guarding, hitstun, etc)
+-- Boxes and Actions to IGNORE
+local IGNORED_BOXES = {}
 local IGNORED_ACTIONS = {
     [0] = true,
     [1] = true,
@@ -89,424 +66,402 @@ local IGNORED_ACTIONS = {
     [233] = true
 }
 
--- State Enum
-local STATE = {
-    IDLE = 1,
-    STARTUP = 2,
-    ACTIVE = 3,
-    RECOVERY = 4
-}
+local STATE = { IDLE = 1, STARTUP = 2, ACTIVE = 3, RECOVERY = 4 }
 local STUN_STATE = { NONE = 0, BLOCK = 1, HIT = 2 }
-
--- Grace Period
-local GRACE_PERIOD = 8
-local frames_since_action_lost = 0
-
--- Current Move Tracking
-local current_state = STATE.IDLE
-local debug_last_box_id = 0
-local last_trigger_box = 0
-local previous_frame_action = 0
-local global_persistent_hit_frame = -1
-local p2_current_stun = STUN_STATE.NONE
-local p2_stun_timer = 0
-local global_persistent_stun = 0
-local global_persistent_stun_type = STUN_STATE.NONE
-local current_advantage = 0
-local global_persistent_advantage = 0
-local advantage_calculating = false
-
--- Data Persistence
-local last_move = {
-    startup = 0,
-    active = 0,
-    recovery = 0,
-    total = 0,
-    hit_frame = -1
-}
-
-local current_move = {
-    startup = 0,
-    active = 0,
-    recovery = 0,
-    total = 0,
-    hit_frame = -1
-}
-
--- HISTORY LOGGER
 local HISTORY_SIZE = 30
-local history_log = {} -- Circular buffer of last 30 frames
-local frozen_log = nil -- Snapshot when bug occurs
+local OFFSET_STATUS = 0x7C
 
 local function is_attack_type(id)
     return (id >= 12 and id <= 55)
 end
 
-local function check_attack_box(base_addr)
-    local status_byte = rb(base_addr + OFFSET_STATUS)
-    local found_any_box = 0
-    for _, offset in ipairs(BOX_OFFSETS) do
-        local bit_pos = BOX_ACTIVE_BITS[offset]
-        local is_enabled = (bit.band(status_byte, bit.lshift(1, bit_pos)) ~= 0)
+local function create_tracker(name, base_addr, action_addr, opp_base_addr, opp_action_addr, opp_hitstatus_addr,
+                              opp_blockstun_addr, draw_x)
+    local self = {}
+    self.name = name
+    self.base_addr = base_addr
+    self.action_addr = action_addr
+    self.opp_base_addr = opp_base_addr
+    self.opp_action_addr = opp_action_addr
+    self.opp_hitstatus_addr = opp_hitstatus_addr
+    self.opp_blockstun_addr = opp_blockstun_addr
+    self.draw_x = draw_x
 
-        if is_enabled then
-            local box_addr = base_addr + offset
-            local box_id = rb(box_addr)
-            if box_id ~= 0 then
-                found_any_box = box_id
-                if is_attack_type(box_id) and not IGNORED_BOXES[box_id] then
-                    debug_last_box_id = box_id
-                    return true
+    function self:init()
+        self.current_state = STATE.IDLE
+        self.last_move = { startup = 0, active = 0, recovery = 0, total = 0, hit_frame = -1 }
+        self.current_move = { startup = 0, active = 0, recovery = 0, total = 0, hit_frame = -1 }
+        self.frames_since_action_lost = 0
+        self.previous_frame_action = 0
+        self.last_trigger_box = 0
+        self.debug_last_box_id = 0
+
+        self.global_persistent_hit_frame = -1
+        self.opp_current_stun = STUN_STATE.NONE
+        self.opp_stun_timer = 0
+        self.global_persistent_stun = 0
+        self.global_persistent_stun_type = STUN_STATE.NONE
+
+        -- Traditional Advantage
+        self.current_advantage = 0
+        self.global_persistent_advantage = 0
+        self.advantage_calculating = false
+
+        -- New Free Advantage (Counts from when attacker reaches Action 0 until opponent reaches Action 0)
+        self.current_free_advantage = 0
+        self.global_persistent_free_advantage = 0
+        self.free_advantage_calculating = false
+
+        self.history_log = {}
+        self.frozen_log = nil
+    end
+
+    self:init()
+
+    function self:check_attack_box()
+        local status_byte = rb(self.base_addr + OFFSET_STATUS)
+        local found_any_box = 0
+        local active_box_id = 0
+        for _, offset in ipairs(BOX_OFFSETS) do
+            local bit_pos = BOX_ACTIVE_BITS[offset]
+            local is_enabled = (bit.band(status_byte, bit.lshift(1, bit_pos)) ~= 0)
+
+            if is_enabled then
+                local box_addr = self.base_addr + offset
+                local box_id = rb(box_addr)
+                if box_id ~= 0 then
+                    found_any_box = box_id
+                    active_box_id = box_id
+                    if is_attack_type(box_id) and not IGNORED_BOXES[box_id] then
+                        self.debug_last_box_id = box_id
+                        return true, box_id
+                    end
                 end
             end
         end
+        self.debug_last_box_id = found_any_box
+        return false, active_box_id
     end
-    debug_last_box_id = found_any_box
-    return false
-end
 
-local function is_action_busy()
-    local action = rb(P1_ACTION_ADDR)
-    return not IGNORED_ACTIONS[action]
-end
+    function self:is_action_busy()
+        local action = rb(self.action_addr)
+        return not IGNORED_ACTIONS[action]
+    end
 
-function frame_data.init()
-    current_state = STATE.IDLE
-    last_move = { startup = 0, active = 0, recovery = 0, total = 0, hit_frame = -1 }
-    current_move = { startup = 0, active = 0, recovery = 0, total = 0, hit_frame = -1 }
-    frames_since_action_lost = 0
-    previous_frame_action = 0
-    history_log = {}
-    frozen_log = nil
+    function self:is_opp_action_busy()
+        local opp_action = rb(self.opp_action_addr)
+        return not IGNORED_ACTIONS[opp_action]
+    end
 
-    p2_current_stun = STUN_STATE.NONE
-    p2_stun_timer = 0
-    global_persistent_stun = 0
-    global_persistent_stun_type = STUN_STATE.NONE
-    current_advantage = 0
-    global_persistent_advantage = 0
-    advantage_calculating = false
-end
+    function self:update()
+        local current_frame_count = emu.framecount()
+        local action_id = rb(self.action_addr)
+        local status_byte = rb(self.base_addr + OFFSET_STATUS)
+        local opp_hitstatus = rb(self.opp_hitstatus_addr)
+        local opp_block_val = rb(self.opp_blockstun_addr)
 
-function frame_data.update()
-    local current_frame_count = emu.framecount()
-    local action_id = rb(P1_ACTION_ADDR)
-    local status_byte = rb(P1_BASE_ADDR + OFFSET_STATUS)
-    local p2_hitstatus = rb(P2_HITSTATUS_ADDR)
+        local raw_is_busy = self:is_action_busy()
+        local opp_raw_is_busy = self:is_opp_action_busy()
+        local is_attacking, active_box_id = self:check_attack_box()
 
-    local raw_is_busy = is_action_busy()
-    local is_attacking = check_attack_box(P1_BASE_ADDR)
+        local opp_is_blockstun = (opp_block_val == 0x20 or opp_block_val == 0xA0)
+        local opp_is_hitstun = (opp_hitstatus ~= 0)
 
-    -- Update History
-    -- Ensure logged box respects filter too, for clarity
-    local active_box_id = 0
-    for _, offset in ipairs(BOX_OFFSETS) do
-        local bit_pos = BOX_ACTIVE_BITS[offset]
-        local is_enabled = (bit.band(status_byte, bit.lshift(1, bit_pos)) ~= 0)
-
-        if is_enabled then
-            local box_addr = P1_BASE_ADDR + offset
-            local box_id = rb(box_addr)
-            if box_id ~= 0 then
-                active_box_id = box_id
-                if is_attack_type(box_id) and not IGNORED_BOXES[box_id] then
-                    break
-                end
-            end
+        local new_stun_state = STUN_STATE.NONE
+        if opp_is_blockstun then
+            new_stun_state = STUN_STATE.BLOCK
+        elseif opp_is_hitstun then
+            new_stun_state = STUN_STATE.HIT
         end
-    end
 
-    -- Hit and Block Detection Processing
-    local p2_block_val = rb(P2_BLOCKSTUN_ADDR)
-    local p2_is_blockstun = (p2_block_val == 0x20 or p2_block_val == 0xA0)
-    local p2_is_hitstun = (p2_hitstatus ~= 0)
-
-    local new_stun_state = STUN_STATE.NONE
-    if p2_is_blockstun then
-        new_stun_state = STUN_STATE.BLOCK
-    elseif p2_is_hitstun then
-        new_stun_state = STUN_STATE.HIT
-    end
-
-    if new_stun_state ~= STUN_STATE.NONE then
-        if p2_current_stun == STUN_STATE.NONE then
-            p2_current_stun = new_stun_state
-            p2_stun_timer = 1
+        if self.opp_current_stun == STUN_STATE.NONE then
+            if new_stun_state ~= STUN_STATE.NONE then
+                self.opp_current_stun = new_stun_state
+                self.opp_stun_timer = 1
+                self.global_persistent_stun = self.opp_stun_timer
+                self.global_persistent_stun_type = self.opp_current_stun
+            end
         else
-            p2_stun_timer = p2_stun_timer + 1
-            if new_stun_state == STUN_STATE.BLOCK then
-                p2_current_stun = STUN_STATE.BLOCK
+            if new_stun_state ~= STUN_STATE.NONE or opp_raw_is_busy then
+                self.opp_stun_timer = self.opp_stun_timer + 1
+                if new_stun_state == STUN_STATE.BLOCK then self.opp_current_stun = STUN_STATE.BLOCK end
+                self.global_persistent_stun = self.opp_stun_timer
+                self.global_persistent_stun_type = self.opp_current_stun
+            else
+                self.opp_current_stun = STUN_STATE.NONE
+                self.opp_stun_timer = 0
             end
         end
-        global_persistent_stun = p2_stun_timer
-        global_persistent_stun_type = p2_current_stun
-    else
-        if p2_current_stun ~= STUN_STATE.NONE then
-            p2_current_stun = STUN_STATE.NONE
-            p2_stun_timer = 0
+
+        if self.current_state ~= STATE.IDLE and self.opp_current_stun ~= STUN_STATE.NONE and self.current_move.hit_frame == -1 then
+            self.current_move.hit_frame = self.current_move.total
+            self.global_persistent_hit_frame = self.current_move.total
+
+            -- Traditional block/hit advantage starts calculating here
+            self.current_advantage = 0
+            self.advantage_calculating = true
+
+            -- New Free Advantage calculation setup
+            self.current_free_advantage = 0
+            self.free_advantage_calculating = true
         end
-    end
 
-    if current_state ~= STATE.IDLE and p2_current_stun ~= STUN_STATE.NONE and current_move.hit_frame == -1 then
-        current_move.hit_frame = current_move.total
-        global_persistent_hit_frame = current_move.total
-        current_advantage = 0
-        advantage_calculating = true
-    end
+        local p1_busy = (self.current_state ~= STATE.IDLE)
+        local p2_busy = (self.opp_current_stun ~= STUN_STATE.NONE)
 
-    -- Advantage Tracking
-    local p1_busy = (current_state ~= STATE.IDLE)
-    local p2_busy = (p2_current_stun ~= STUN_STATE.NONE)
-
-    if advantage_calculating then
-        if p1_busy and not p2_busy then
-            current_advantage = current_advantage - 1
-        elseif not p1_busy and p2_busy then
-            current_advantage = current_advantage + 1
+        -- Traditional Advantage (Based on explicitly known states)
+        if self.advantage_calculating then
+            if p1_busy and not p2_busy then
+                self.current_advantage = self.current_advantage - 1
+            elseif not p1_busy and p2_busy then
+                self.current_advantage = self.current_advantage + 1
+            end
+            self.global_persistent_advantage = self.current_advantage
+            if not p1_busy and not p2_busy then self.advantage_calculating = false end
         end
-        global_persistent_advantage = current_advantage
 
-        -- Stop calculating when both return to free state
-        if not p1_busy and not p2_busy then
-            advantage_calculating = false
+        -- Free Advantage (Starts counting difference ONLY when one player hits Action 0)
+        if self.free_advantage_calculating then
+            local opp_is_stunned = (self.opp_current_stun ~= STUN_STATE.NONE)
+            -- We just care if the ACTION is 0 or not for attacker, and STUN state for opponent.
+            if not raw_is_busy and opp_is_stunned then
+                self.current_free_advantage = self.current_free_advantage + 1
+            elseif raw_is_busy and not opp_is_stunned then
+                self.current_free_advantage = self.current_free_advantage - 1
+            end
+
+            self.global_persistent_free_advantage = self.current_free_advantage
+
+            -- Stop counting when P1 has recovered AND opponent stun has ended
+            if not raw_is_busy and not opp_is_stunned then
+                self.free_advantage_calculating = false
+            end
         end
-    end
 
-    table.insert(history_log, 1,
-        {
+        table.insert(self.history_log, 1, {
             frame = current_frame_count,
             action = action_id,
             status = status_byte,
             box_id = active_box_id,
-            state =
-                current_state,
+            state = self.current_state,
             raw_busy = raw_is_busy,
             attacking = is_attacking,
-            p2_hit = p2_hitstatus
+            opp_hit = opp_hitstatus
         })
-    if #history_log > HISTORY_SIZE then
-        table.remove(history_log)
+        if #self.history_log > HISTORY_SIZE then table.remove(self.history_log) end
+
+        local is_executing = raw_is_busy
+        if self.current_state == STATE.IDLE then
+            if is_executing then
+                self.current_state = STATE.STARTUP
+                self.frames_since_action_lost = 0
+
+                -- Clear persistent data to "-"
+                self.global_persistent_hit_frame = -1
+                self.global_persistent_stun = 0
+                self.global_persistent_stun_type = STUN_STATE.NONE
+
+                self.global_persistent_advantage = 0
+                self.advantage_calculating = false
+
+                self.global_persistent_free_advantage = 0
+                self.current_free_advantage = 0
+                self.free_advantage_calculating = false
+
+                self.current_move = { startup = 1, active = 0, recovery = 0, total = 1, hit_frame = -1 }
+            end
+        elseif self.current_state == STATE.STARTUP then
+            if not is_executing then
+                self.last_move = {
+                    startup = self.current_move.startup,
+                    active = 0,
+                    recovery = 0,
+                    total = self
+                        .current_move.startup,
+                    hit_frame = -1
+                }
+                self.current_state = STATE.IDLE
+            elseif is_attacking then
+                self.current_state = STATE.ACTIVE
+                self.last_trigger_box = self.debug_last_box_id
+                self.current_move.active = 1
+                self.current_move.total = self.current_move.startup + self.current_move.active
+                if self.current_move.startup <= 1 then
+                    self.frozen_log = {}
+                    for i, v in ipairs(self.history_log) do table.insert(self.frozen_log, v) end
+                end
+            else
+                self.current_move.startup = self.current_move.startup + 1
+                self.current_move.total = self.current_move.startup
+            end
+        elseif self.current_state == STATE.ACTIVE then
+            if not is_executing then
+                self.last_move = {
+                    startup = self.current_move.startup,
+                    active = self.current_move.active,
+                    recovery = 0,
+                    total =
+                        self.current_move.startup + self.current_move.active,
+                    hit_frame = self.current_move.hit_frame
+                }
+                self.current_state = STATE.IDLE
+            elseif not is_attacking then
+                self.current_state = STATE.RECOVERY
+                self.current_move.recovery = 1
+                self.current_move.total = self.current_move.startup + self.current_move.active +
+                    self.current_move.recovery
+            else
+                self.current_move.active = self.current_move.active + 1
+                self.current_move.total = self.current_move.startup + self.current_move.active
+            end
+        elseif self.current_state == STATE.RECOVERY then
+            if not is_executing then
+                self.last_move = {
+                    startup = self.current_move.startup,
+                    active = self.current_move.active,
+                    recovery =
+                        self.current_move.recovery,
+                    total = self.current_move.total,
+                    hit_frame = self.current_move.hit_frame
+                }
+                self.current_state = STATE.IDLE
+            elseif is_attacking then
+                self.current_state = STATE.ACTIVE
+                self.current_move.active = self.current_move.active + 1
+                self.current_move.total = self.current_move.startup + self.current_move.active +
+                    self.current_move.recovery
+            else
+                self.current_move.recovery = self.current_move.recovery + 1
+                self.current_move.total = self.current_move.startup + self.current_move.active +
+                    self.current_move.recovery
+            end
+        end
+        self.previous_frame_action = action_id
     end
 
-    -- LOGGING TO FILE
-    if log_file then
-        local should_log = (action_id ~= 0) or (active_box_id ~= 0) or (current_state ~= STATE.IDLE)
-        if should_log then
-            -- Print status_byte as binary bits for debugging the active state issue
-            local status_bits = ""
-            for i = 7, 0, -1 do
-                status_bits = status_bits .. (bit.btst(i, status_byte) ~= 0 and "1" or "0")
+    function self:draw()
+        local x = self.draw_x
+        if SHOW_DEBUG_INFO then
+            gui.box(x - 2, 58, x + 158, 410, 0x00000080, 0x00000080)
+        else
+            -- Taller box to fit Free Adv
+            gui.box(x - 2, 58, x + 88, 168, 0x00000080, 0x00000080)
+        end
+
+        gui.text(x, 60, self.name .. " Frame Data:", "yellow")
+        local stats = (self.current_state == STATE.IDLE) and self.last_move or self.current_move
+
+        gui.text(x, 72, "Startup:  " .. stats.startup)
+        gui.text(x, 82, "Active:   " .. stats.active)
+        gui.text(x, 92, "Recovery: " .. stats.recovery)
+        gui.text(x, 102, "Total:    " .. stats.total)
+
+        local hit_text = (self.global_persistent_hit_frame ~= -1) and tostring(self.global_persistent_hit_frame) or "-"
+        local hit_color = (self.global_persistent_hit_frame ~= -1) and "yellow" or "white"
+        gui.text(x, 112, "Hit Frame:" .. string.rep(" ", 3) .. hit_text, hit_color)
+
+        local stun_text = "-"
+        if self.global_persistent_stun_type == STUN_STATE.BLOCK then
+            stun_text = self.global_persistent_stun .. " (Block)"
+        elseif self.global_persistent_stun_type == STUN_STATE.HIT then
+            stun_text = self.global_persistent_stun .. " (Hit)"
+        end
+        gui.text(x, 122, "Opp Stun: " .. string.rep(" ", 2) .. stun_text,
+            (self.global_persistent_stun > 0) and "orange" or "white")
+
+        local adv_text = "-"
+        local adv_color = "white"
+        if self.global_persistent_hit_frame ~= -1 then
+            local adv_suffix = ""
+            if self.global_persistent_stun_type == STUN_STATE.BLOCK then
+                adv_suffix = " (Block)"
+            elseif self.global_persistent_stun_type == STUN_STATE.HIT then
+                adv_suffix = " (Hit)"
             end
 
-            -- adding p2_hitstatus to the end of log
-            log_file:write(string.format("%d,%d,%s,%d,%d,%d,%d,%d\n",
-                current_frame_count, action_id, status_bits, active_box_id, current_state,
-                current_move.startup, current_move.active, p2_hitstatus))
-            log_file:flush()
-        end
-    end
-
-    -- Grace Period Logic (Temporarily disabled as requested)
-    local is_executing = raw_is_busy
-    --[[
-    if raw_is_busy then
-        frames_since_action_lost = 0
-    else
-        if current_state ~= STATE.IDLE then
-            frames_since_action_lost = frames_since_action_lost + 1
-            if frames_since_action_lost <= GRACE_PERIOD then
-                is_executing = true
+            if self.global_persistent_advantage > 0 then
+                adv_text = "+" .. self.global_persistent_advantage .. adv_suffix
+                adv_color = "green"
+            elseif self.global_persistent_advantage < 0 then
+                adv_text = tostring(self.global_persistent_advantage) .. adv_suffix
+                adv_color = "red"
+            else
+                adv_text = "0" .. adv_suffix
+                adv_color = "yellow"
             end
         end
-    end
-    --]]
+        gui.text(x, 132, "Advantage:" .. string.rep(" ", 2) .. adv_text, adv_color)
 
-    if current_state == STATE.IDLE then
-        if is_executing then
-            -- START
-            print("Debug: Move STARTED at frame " .. current_frame_count)
-            current_state = STATE.STARTUP
-            frames_since_action_lost = 0
-
-            -- Clear persistent data to show "-" on new moves
-            global_persistent_hit_frame = -1
-            global_persistent_stun = 0
-            global_persistent_stun_type = STUN_STATE.NONE
-            global_persistent_advantage = 0
-            advantage_calculating = false
-
-            -- To prevent 1-frame startup bugs when the engine throws a hitbox without startup,
-            -- Reset explicitly distinct variables
-            current_move = { startup = 1, active = 0, recovery = 0, total = 1, hit_frame = -1 }
+        -- Free Adv
+        local free_adv_text = "-"
+        local free_adv_color = "white"
+        if self.global_persistent_hit_frame ~= -1 or self.free_advantage_calculating or self.global_persistent_free_advantage ~= 0 then
+            if self.global_persistent_free_advantage > 0 then
+                free_adv_text = "+" .. self.global_persistent_free_advantage
+                free_adv_color = "green"
+            elseif self.global_persistent_free_advantage < 0 then
+                free_adv_text = tostring(self.global_persistent_free_advantage)
+                free_adv_color = "red"
+            else
+                free_adv_text = "0"
+                free_adv_color = "yellow"
+            end
         end
-    elseif current_state == STATE.STARTUP then
-        if not is_executing then
-            -- Whiff (Move ended during startup)
-            last_move = {
-                startup = current_move.startup,
-                active = 0,
-                recovery = 0,
-                total = current_move.startup,
-                hit_frame = -1
-            }
-            current_state = STATE.IDLE
-        elseif is_attacking then
-            -- Transition to ACTIVE
-            current_state = STATE.ACTIVE
-            last_trigger_box = debug_last_box_id
-            current_move.active = 1
-            current_move.total = current_move.startup + current_move.active
+        gui.text(x, 142, "Free Adv: " .. string.rep(" ", 2) .. free_adv_text, free_adv_color)
 
-            -- TRIGGER DEBUG
-            if current_move.startup <= 1 then
-                print("Debug: Startup 1 Detected! Box: " .. last_trigger_box)
-                frozen_log = {}
-                for i, v in ipairs(history_log) do
-                    table.insert(frozen_log, v)
+
+        local action = rb(self.action_addr)
+        gui.text(x, 155, "Action ID:     " .. action, "gray")
+
+        if SHOW_DEBUG_INFO then
+            gui.text(x, 165, "Trigger Box:   " .. self.last_trigger_box, "red")
+            gui.text(x, 180, "Debug Internal:", "yellow")
+            gui.text(x, 190, "Grace Frames: " .. self.frames_since_action_lost)
+            gui.text(x, 200, "Raw Busy: " .. tostring(self:is_action_busy()))
+            gui.text(x, 210, "Attacking: " .. tostring(self:check_attack_box()))
+
+            local log_to_show = self.frozen_log or self.history_log
+            gui.text(x, 230, "LOG (Last 15):", "red")
+            for i = 1, 15 do
+                local entry = log_to_show[i]
+                if entry then
+                    local s_char = "?"
+                    if entry.state == 1 then
+                        s_char = "I"
+                    elseif entry.state == 2 then
+                        s_char = "S"
+                    elseif entry.state == 3 then
+                        s_char = "A"
+                    elseif entry.state == 4 then
+                        s_char = "R"
+                    end
+                    local line = string.format("-%d%s A:%d", i - 1, s_char, entry.action)
+                    gui.text(x, 240 + (i * 10), line, (entry.state == 3) and "red" or "white")
                 end
             end
-        else
-            -- Still STARTUP
-            current_move.startup = current_move.startup + 1
-            current_move.total = current_move.startup
-        end
-    elseif current_state == STATE.ACTIVE then
-        if not is_executing then
-            -- Finish directly from active
-            last_move = {
-                startup = current_move.startup,
-                active = current_move.active,
-                recovery = 0,
-                total = current_move.startup + current_move.active,
-                hit_frame = current_move.hit_frame
-            }
-            current_state = STATE.IDLE
-        elseif not is_attacking then
-            -- Transition to Recovery
-            current_state = STATE.RECOVERY
-            current_move.recovery = 1
-            current_move.total = current_move.startup + current_move.active + current_move.recovery
-        else
-            -- Still ACTIVE
-            current_move.active = current_move.active + 1
-            current_move.total = current_move.startup + current_move.active
-        end
-    elseif current_state == STATE.RECOVERY then
-        if not is_executing then
-            -- Finish
-            last_move = {
-                startup = current_move.startup,
-                active = current_move.active,
-                recovery = current_move.recovery,
-                total = current_move.total,
-                hit_frame = current_move.hit_frame
-            }
-            current_state = STATE.IDLE
-        elseif is_attacking then
-            -- Multi-hit move went back to active
-            current_state = STATE.ACTIVE
-            current_move.active = current_move.active + 1
-            current_move.total = current_move.startup + current_move.active + current_move.recovery
-        else
-            -- Still RECOVERY
-            current_move.recovery = current_move.recovery + 1
-            current_move.total = current_move.startup + current_move.active + current_move.recovery
         end
     end
 
-    previous_frame_action = action_id
+    return self
+end
+
+-- Create both P1 and P2 trackers. P2 gets passed P1's addresses for the "Opponent" arguments
+local p1_tracker = create_tracker("P1", 0x108100, 0x108173, 0x108300, 0x108373, 0x108372, 0x1083E3, 4)
+local p2_tracker = create_tracker("P2", 0x108300, 0x108373, 0x108100, 0x108173, 0x108172, 0x1081E3, 225)
+
+function frame_data.init()
+    p1_tracker:init()
+    p2_tracker:init()
+end
+
+function frame_data.update()
+    p1_tracker:update()
+    p2_tracker:update()
 end
 
 function frame_data.draw()
-    if SHOW_DEBUG_INFO then
-        -- Increase box width and height for extra debug info
-        gui.box(2, 58, 260, 225, 0x00000080, 0x00000080)
-    else
-        -- Slim box for clean data only, taller to fit Stun & Adv
-        gui.box(2, 58, 90, 155, 0x00000080, 0x00000080)
-    end
-
-    gui.text(4, 60, "Frame Data:", "yellow")
-
-    local stats = (current_state == STATE.IDLE) and last_move or current_move
-
-    gui.text(4, 72, "Startup:  " .. stats.startup)
-    gui.text(4, 82, "Active:   " .. stats.active)
-    gui.text(4, 92, "Recovery: " .. stats.recovery)
-    gui.text(4, 102, "Total:    " .. stats.total)
-    -- Formatting fix
-
-    local hit_text = (global_persistent_hit_frame ~= -1) and tostring(global_persistent_hit_frame) or "-"
-    local hit_color = (global_persistent_hit_frame ~= -1) and "yellow" or "white"
-    gui.text(4, 112, "Hit Frame:" .. string.rep(" ", 3) .. hit_text, hit_color)
-
-    local stun_text = "-"
-    if global_persistent_stun_type == STUN_STATE.BLOCK then
-        stun_text = global_persistent_stun .. " (Block)"
-    elseif global_persistent_stun_type == STUN_STATE.HIT then
-        stun_text = global_persistent_stun .. " (Hit)"
-    end
-    gui.text(4, 122, "Opp Stun: " .. string.rep(" ", 2) .. stun_text,
-        (global_persistent_stun > 0) and "orange" or "white")
-
-    local adv_text = "-"
-    local adv_color = "white"
-    if global_persistent_hit_frame ~= -1 then
-        local adv_suffix = ""
-        if global_persistent_stun_type == STUN_STATE.BLOCK then
-            adv_suffix = " (Block)"
-        elseif global_persistent_stun_type == STUN_STATE.HIT then
-            adv_suffix = " (Hit)"
-        end
-
-        if global_persistent_advantage > 0 then
-            adv_text = "+" .. global_persistent_advantage .. adv_suffix
-            adv_color = "green"
-        elseif global_persistent_advantage < 0 then
-            adv_text = tostring(global_persistent_advantage) .. adv_suffix
-            adv_color = "red"
-        else
-            adv_text = "0" .. adv_suffix
-            adv_color = "yellow"
-        end
-    end
-    gui.text(4, 132, "Advantage:" .. string.rep(" ", 2) .. adv_text, adv_color)
-
-    local action = rb(P1_ACTION_ADDR)
-    gui.text(4, 145, "Action ID:     " .. action, "gray")
-
-    if SHOW_DEBUG_INFO then
-        gui.text(4, 165, "Trigger Box:   " .. last_trigger_box, "red")
-
-        -- New Debug Info
-        gui.text(4, 180, "Debug Internal:", "yellow")
-        gui.text(4, 190, "Grace Frames: " .. frames_since_action_lost)
-        gui.text(4, 200, "Raw Busy: " .. tostring(is_action_busy()))
-        gui.text(4, 210, "Attacking: " .. tostring(check_attack_box(P1_BASE_ADDR)))
-
-        -- Show History Log (Always)
-        local log_to_show = frozen_log or history_log
-
-        gui.text(140, 60, "LOG (Last 15):", "red")
-        for i = 1, 15 do
-            local entry = log_to_show[i]
-            if entry then
-                local s_char = "?"
-                if entry.state == 1 then
-                    s_char = "I"
-                elseif entry.state == 2 then
-                    s_char = "S"
-                elseif entry.state == 3 then
-                    s_char = "A"
-                elseif entry.state == 4 then
-                    s_char = "R"
-                end
-
-                local line = string.format("-%d%s A:%d B:%d", i - 1, s_char, entry.action, entry.box_id)
-                gui.text(140, 70 + (i * 8), line, (entry.state == 3) and "red" or "white")
-            end
-        end
-    end
+    p1_tracker:draw()
+    p2_tracker:draw()
 end
 
 return frame_data
