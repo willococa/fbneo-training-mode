@@ -916,6 +916,19 @@ local p1_and_dummy_data = {
 			this.text = "Debug Meter: " .. (KOF_CONFIG.DEBUG.METER == 1 and "On" or "Off")
 		end,
 	},
+	["14"] = {
+		text = "Debug Frame Data",
+		x = 118,
+		y = 116,
+		olcolour = "black",
+		handle = 13,
+		func = function()
+			KOF_CONFIG.DEBUG.FRAMEDATA = KOF_CONFIG.DEBUG.FRAMEDATA == 0 and 1 or 0
+		end,
+		autofunc = function(this)
+			this.text = "Debug Frame Data: " .. (KOF_CONFIG.DEBUG.FRAMEDATA == 1 and "On" or "Off")
+		end,
+	},
 }
 for key, item in pairs(p1_and_dummy_data) do
 	table.insert(guipages.p1_and_dummy_settings, item)

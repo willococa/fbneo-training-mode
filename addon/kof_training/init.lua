@@ -1408,7 +1408,7 @@ end
 
 
 local function isOnWakeUp()
-	gui.text(10, 80, "WakeUp: " .. rw(0x108321))
+	--gui.text(10, 80, "WakeUp: " .. rw(0x108321))
 	local dummy_in_air_word_address = 0x108321
 	local dummy_in_air = (rw(dummy_in_air_word_address) > 0) and rb(p2hitstatus) == 1
 
@@ -2476,6 +2476,8 @@ function StateHandlers.cpu_action(ctx)
 end
 
 function KofTrainingRun() -- runs every frame
+	--wb(0x02FD3A, 0x68)
+
 	updateWakeUpEventStatus(stateMachine)
 
 	if KOF_CONFIG.PLAYERS.PLAYER1.CROUCH_GUARD.can_crouch_guard then
@@ -2595,7 +2597,9 @@ function KofTrainingRun() -- runs every frame
 	end ]]
 
 	-- Update frame data
-	frame_data.update()
+	if KOF_CONFIG.DEBUG.FRAMEDATA == 1 then
+		frame_data.update()
+	end
 
 	-- Dispatch to State Handlers
 	local handler = StateHandlers[stateMachine.currentState]
@@ -2611,5 +2615,9 @@ end
 
 if registers and registers.guiregister then
 	table.insert(registers.guiregister, KofTrainingRun)
-	table.insert(registers.guiregister, frame_data.draw)
+	table.insert(registers.guiregister, function()
+		if KOF_CONFIG.DEBUG.FRAMEDATA == 1 then
+			frame_data.draw()
+		end
+	end)
 end

@@ -2,7 +2,7 @@ KOF_CONFIG = {
     SUPPORTED_GAMES = {
         ["kof98"] = true,
         ["kof98h"] = true,
-        ["kof98n"] = true,
+        ["kof97"] = true,
     },
 
     GUARD = {
@@ -395,6 +395,7 @@ KOF_CONFIG = {
         DISTANCE = 0,
         STATE = 0,
         METER = 0,
+        FRAMEDATA = 1,
     }
 
 }
