@@ -119,6 +119,7 @@ local function create_tracker(name, base_addr, action_addr, opp_base_addr, opp_a
     self:init()
 
     function self:check_attack_box()
+        -- 1. Check Personal Attack Boxes
         local status_byte = rb(self.base_addr + OFFSET_STATUS)
         local found_any_box = 0
         local active_box_id = 0
@@ -140,6 +141,58 @@ local function create_tracker(name, base_addr, action_addr, opp_base_addr, opp_a
             end
         end
         self.debug_last_box_id = found_any_box
+
+        -- 2. Check Global Projectiles
+        -- For KOF94-2002, projectiles exist in a linked list or pointer array starting at a specific game phase address
+        -- Since we only have access to basic memory reading here and need it to work across games (mostly 97/98/2002),
+        -- we will use a known approach to scan for projectiles if applicable.
+        local GAME_OBJ_PTR_LIST = nil
+        local rom_name = emu.romname() or ""
+        if rom_name == "kof98" or rom_name == "kof98h" then
+            GAME_OBJ_PTR_LIST = 0x10B094 + 0xE90
+        elseif rom_name == "kof97" then
+            GAME_OBJ_PTR_LIST = 0x10B092 + 0xE90
+        elseif rom_name == "kof2002" or rom_name == "kof2001" then
+            GAME_OBJ_PTR_LIST = 0x10B056 + 0xE90
+        end
+
+        if GAME_OBJ_PTR_LIST then
+            local offset = 0
+            while offset < 100 do -- safety limit
+                local obj_ptr = rw(GAME_OBJ_PTR_LIST + offset)
+                if obj_ptr == 0 then break end
+
+                local full_base = bit.bor(0x100000, obj_ptr)
+                local active_status = rws(full_base + 0x6)
+
+                if active_status >= 0 then
+                    -- Projectile is allocated, but does it have an active attack box?
+                    -- Projectile status offsets vary slightly by game, but usually 0x7C or 0x7D
+                    local status_offset = (rom_name == "kof94" and 0x7A) or (rom_name == "kof95" and 0x7D) or 0x7C
+                    local proj_status_byte = rb(full_base + status_offset)
+
+                    local has_active_box = false
+                    for _, box_offset in ipairs(BOX_OFFSETS) do
+                        local bit_pos = BOX_ACTIVE_BITS[box_offset]
+                        if (bit.band(proj_status_byte, bit.lshift(1, bit_pos)) ~= 0) then
+                            local box_id = rb(full_base + box_offset)
+                            if is_attack_type(box_id) then
+                                has_active_box = true
+                                break
+                            end
+                        end
+                    end
+
+                    if has_active_box then
+                        self.debug_last_box_id = 999 -- special id for projectile
+                        return true, 999
+                    end
+                end
+
+                offset = offset + 2
+            end
+        end
+
         return false, active_box_id
     end
 
