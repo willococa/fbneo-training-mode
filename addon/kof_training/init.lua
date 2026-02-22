@@ -28,13 +28,16 @@ require("addon.kof_training.moves_settings")
 require("addon.kof_training.guipages")
 local frame_data = require("addon.kof_training.frame_data")
 
-local p1hitstatus = 0x108172
-local p2hitstatus = 0x108372
+local current_game = KOF_CONFIG.get_current_game()
 
-local in_air = 0x108322
+local p1hitstatus = current_game.player1_base + current_game.offsets.hitstatus
+local p2hitstatus = current_game.player2_base + current_game.offsets.hitstatus
 
-local p1_stored_index_location = 0x10A84E
-local p2_stored_index_location = 0x10A85F
+local air_height = current_game.player2_base + current_game.offsets.air_height
+
+-- Calculate relative offset using the new player_stored_index property
+local p1_stored_index_location = current_game.player1_base + current_game.offsets.player_stored_index
+local p2_stored_index_location = p1_stored_index_location + 0x11
 
 local stateMachine = {
 	currentState = "start",
@@ -171,12 +174,12 @@ dummy_reversal = customconfig.dummy_reversal
 dummy_reversal_random = customconfig.dummy_reversal_random ]]
 
 --local reversal_move =0x62 -- 0x63 --standing punch
-local p2move_adress = 0x108373
-local p2blockstun_address = 0x1083E3
+local p2move_adress = current_game.player2_base + current_game.offsets.action
+local p2blockstun_address = current_game.player2_base + current_game.offsets.blockstun
 -- p2blockstun_value is handled locally in the updater
 
-local p1move_adress = 0x108173
-local p1blockstun_address = 0x1081E3
+local p1move_adress = current_game.player1_base + current_game.offsets.action
+local p1blockstun_address = current_game.player1_base + current_game.offsets.blockstun
 
 -------------------------------------------------
 --- POSIBBLE MEMORIE ADRESSES ----
@@ -254,6 +257,7 @@ local function P1ActionIsExecuting()
 		[54] = true,
 		[55] = true,
 		[56] = true,
+		[79] = true,
 		[157] = true,
 		[158] = true,
 		[159] = true,
@@ -507,12 +511,15 @@ end
 --[[*** General Functions ***]]
 
 function getPlayerName(player_id)
+	local current_game = KOF_CONFIG.get_current_game()
 	if player_id == KOF_CONFIG.PLAYERS.PLAYER1.ID then
 		local p1_rom_index = rb(p1_stored_index_location) + 1 -- +1 because the table CHARACTERS starts at 1
-		return KOF_CONFIG.CHARACTERS[p1_rom_index].name
+		local char = current_game.characters[p1_rom_index]
+		return char and char.name or "Unknown"
 	elseif player_id == KOF_CONFIG.PLAYERS.PLAYER2.ID then
 		local p2_rom_index = rb(p2_stored_index_location) + 1 -- +1 because the table CHARACTERS starts at 1
-		return KOF_CONFIG.CHARACTERS[p2_rom_index].name
+		local char = current_game.characters[p2_rom_index]
+		return char and char.name or "Unknown"
 	end
 end
 
@@ -545,10 +552,15 @@ function dumpTable(t, indent)
 end
 
 function getCurrentSetupName()
+	local current_game = KOF_CONFIG.get_current_game()
 	local p1_rom_index = rb(p1_stored_index_location) + 1 -- +1 because the table CHARACTERS starts at 1
 	local p2_rom_index = rb(p2_stored_index_location) + 1 -- +1 because the table CHARACTERS starts at 1
-	local p1_short_name = KOF_CONFIG.CHARACTERS[p1_rom_index].short_name
-	local p2_short_name = KOF_CONFIG.CHARACTERS[p2_rom_index].short_name
+
+	local p1_char = current_game.characters[p1_rom_index]
+	local p2_char = current_game.characters[p2_rom_index]
+
+	local p1_short_name = p1_char and p1_char.short_name or "p1"
+	local p2_short_name = p2_char and p2_char.short_name or "p2"
 	local base_name = p1_short_name .. "_" .. p2_short_name
 	return base_name
 end
@@ -1409,10 +1421,10 @@ end
 
 local function isOnWakeUp()
 	--gui.text(10, 80, "WakeUp: " .. rw(0x108321))
-	local dummy_in_air_word_address = 0x108321
-	local dummy_in_air = (rw(dummy_in_air_word_address) > 0) and rb(p2hitstatus) == 1
+	local dummy_air_height_word_address = 0x108321
+	local dummy_is_in_air = (rw(dummy_air_height_word_address) > 0) and rb(p2hitstatus) == 1
 
-	return dummy_in_air
+	return dummy_is_in_air
 end
 local function closeToGround()
 	return rw(0x108321) < 20000 and (rw(0x108321) > 0)
@@ -2536,6 +2548,14 @@ function KofTrainingRun() -- runs every frame
 
 		wb(p1_stored_index_location, KOF_CONFIG.UI.CURRENT_PLAYER1.code)
 		wb(p2_stored_index_location, KOF_CONFIG.UI.CURRENT_PLAYER2.code)
+
+		if not KOF_CONFIG.UI.CURRENT_PLAYER1.has_ex then
+			KOF_CONFIG.UI.PLAYER1_EX = false
+		end
+		if not KOF_CONFIG.UI.CURRENT_PLAYER2.has_ex then
+			KOF_CONFIG.UI.PLAYER2_EX = false
+		end
+
 		if KOF_CONFIG.UI.PLAYER1_EX then
 			wb(0x10A85A, 0x01)
 		end
@@ -2555,10 +2575,17 @@ function KofTrainingRun() -- runs every frame
 				wb(0x10A85D, 0x01)
 			end
 		end
+
+		KOF_CONFIG.UI.APPLIED.PLAYER1 = KOF_CONFIG.UI.CURRENT_PLAYER1
+		KOF_CONFIG.UI.APPLIED.PLAYER2 = KOF_CONFIG.UI.CURRENT_PLAYER2
+		KOF_CONFIG.UI.APPLIED.PLAYER1_EX = KOF_CONFIG.UI.PLAYER1_EX
+		KOF_CONFIG.UI.APPLIED.PLAYER2_EX = KOF_CONFIG.UI.PLAYER2_EX
+		KOF_CONFIG.UI.APPLIED.PLAYER1_MODE = KOF_CONFIG.UI.PLAYER1_MODE
+		KOF_CONFIG.UI.APPLIED.PLAYER2_MODE = KOF_CONFIG.UI.PLAYER2_MODE
 	end
 
 
-	--gui.text(197, 73,  rb(in_air), "cyan", "black")
+	--gui.text(197, 73,  rb(air_height), "cyan", "black")
 	--[[ if rb(0x108321)~=0  then
 		
 		print(rb(0x108321).."-"..rb(0x108322).."-"..rb(0x108323))
@@ -2597,7 +2624,7 @@ function KofTrainingRun() -- runs every frame
 	end ]]
 
 	-- Update frame data
-	if KOF_CONFIG.DEBUG.FRAMEDATA == 1 then
+	if KOF_CONFIG.DEBUG.FRAMEDATA > 0 then
 		frame_data.update()
 	end
 
@@ -2616,7 +2643,7 @@ end
 if registers and registers.guiregister then
 	table.insert(registers.guiregister, KofTrainingRun)
 	table.insert(registers.guiregister, function()
-		if KOF_CONFIG.DEBUG.FRAMEDATA == 1 then
+		if KOF_CONFIG.DEBUG.FRAMEDATA > 0 then
 			frame_data.draw()
 		end
 	end)

@@ -1,4 +1,113 @@
 KOF_CONFIG = {
+    GAMES = {
+        ["kof98"] = {
+            name = "The King of Fighters '98",
+            player1_base = 0x108100,
+            player2_base = 0x108300,
+            offsets = {
+                hitstatus = 0x72,
+                action = 0x73,
+                status = 0x7C,
+                blockstun = 0xE3,
+                air_height = 0x21,
+                player_stored_index = 0x274E, -- Memory delta: p1 is 0x10A84E, relative to base 0x108100 = 0x274E
+                obj_ptr_list = 0x10B094 + 0xE90,
+                game_phase = 0x10B094,
+            },
+            characters = {
+                [1] = { name = "Kyo Kusanagi", code = "0x00", short_name = "kyo", has_ex = true },
+                [2] = { name = "Benimaru Nikaido", code = "0x01", short_name = "beni" },
+                [3] = { name = "Goro Daimon", code = "0x02", short_name = "goro" },
+                [4] = { name = "Terry Bogard", code = "0x03", short_name = "terry", has_ex = true },
+                [5] = { name = "Andy Bogard", code = "0x04", short_name = "andy", has_ex = true },
+                [6] = { name = "Joe Higashi", code = "0x05", short_name = "joe", has_ex = true },
+                [7] = { name = "Ryo Sakazaki", code = "0x06", short_name = "ryo", has_ex = true },
+                [8] = { name = "Robert Garcia", code = "0x07", short_name = "robert", has_ex = true },
+                [9] = { name = "Yuri Sakazaki", code = "0x08", short_name = "yuri", has_ex = true },
+                [10] = { name = "Leona", code = "0x09", short_name = "leona" },
+                [11] = { name = "Ralf Jones", code = "0x0A", short_name = "ralf" },
+                [12] = { name = "Clark Steel", code = "0x0B", short_name = "clark" },
+                [13] = { name = "Athena Asamiya", code = "0x0C", short_name = "athena" },
+                [14] = { name = "Sie Kensou", code = "0x0D", short_name = "sie" },
+                [15] = { name = "Chin Gentsai", code = "0x0E", short_name = "chin" },
+                [16] = { name = "Chizuru Kagura", code = "0x0F", short_name = "chizuru" },
+                [17] = { name = "Mai Shiranui", code = "0x10", short_name = "mai", has_ex = true },
+                [18] = { name = "King", code = "0x11", short_name = "king" },
+                [19] = { name = "Kim Kaphwan", code = "0x12", short_name = "kim" },
+                [20] = { name = "Chang Koehan", code = "0x13", short_name = "chang" },
+                [21] = { name = "Choi Bounge", code = "0x14", short_name = "choi" },
+                [22] = { name = "Yashiro Nanakase", code = "0x15", short_name = "yashiro", has_ex = true },
+                [23] = { name = "Shermie", code = "0x16", short_name = "shermie", has_ex = true },
+                [24] = { name = "Chris", code = "0x17", short_name = "chris", has_ex = true },
+                [25] = { name = "Ryuji Yamazaki", code = "0x18", short_name = "ryuji" },
+                [26] = { name = "Blue Mary", code = "0x19", short_name = "mary" },
+                [27] = { name = "Billy Kane", code = "0x1A", short_name = "billy", has_ex = true },
+                [28] = { name = "Iori Yagami", code = "0x1B", short_name = "iori" },
+                [29] = { name = "Mature", code = "0x1C", short_name = "mature" },
+                [30] = { name = "Vice", code = "0x1D", short_name = "vice" },
+                [31] = { name = "Heidern", code = "0x1E", short_name = "heidern" },
+                [32] = { name = "Takuma Sakazaki", code = "0x1F", short_name = "takuma" },
+                [33] = { name = "Saisyu Kusanagi", code = "0x20", short_name = "saisyu" },
+                [34] = { name = "Heavy D!", code = "0x21", short_name = "heavy" },
+                [35] = { name = "Lucky Glauber", code = "0x22", short_name = "lucky" },
+                [36] = { name = "Brian Battler", code = "0x23", short_name = "brian" },
+                [37] = { name = "Rugal Bernstein", code = "0x24", short_name = "rugal", has_ex = true },
+                [38] = { name = "Shingo Yabuki", code = "0x25", short_name = "shingo" },
+            }
+        },
+        ["kof97"] = {
+            name = "The King of Fighters '97",
+            player1_base = 0x108100,
+            player2_base = 0x108300,
+            offsets = {
+                hitstatus = 0x72,
+                action = 0x73,
+                status = 0x7C,
+                blockstun = 0xE3,
+                air_height = 0x21,
+                player_stored_index = 0x274E, -- Need to verify
+                obj_ptr_list = 0x10B092 + 0xE90,
+                game_phase = 0x10B092,
+            },
+            characters = {
+                [1] = { name = "Kyo Kusanagi", code = "0x00", short_name = "kyo", has_ex = true },
+                [2] = { name = "Benimaru Nikaido", code = "0x01", short_name = "beni" },
+                [3] = { name = "Goro Daimon", code = "0x02", short_name = "goro" },
+                [4] = { name = "Terry Bogard", code = "0x03", short_name = "terry", has_ex = true },
+                [5] = { name = "Andy Bogard", code = "0x04", short_name = "andy", has_ex = true },
+                [6] = { name = "Joe Higashi", code = "0x05", short_name = "joe", has_ex = true },
+                [7] = { name = "Ryo Sakazaki", code = "0x06", short_name = "ryo", has_ex = true },
+                [8] = { name = "Robert Garcia", code = "0x07", short_name = "robert", has_ex = true },
+                [9] = { name = "Yuri Sakazaki", code = "0x08", short_name = "yuri", has_ex = true },
+                [10] = { name = "Leona", code = "0x09", short_name = "leona" },
+                [11] = { name = "Ralf Jones", code = "0x0A", short_name = "ralf" },
+                [12] = { name = "Clark Steel", code = "0x0B", short_name = "clark" },
+                [13] = { name = "Athena Asamiya", code = "0x0C", short_name = "athena" },
+                [14] = { name = "Sie Kensou", code = "0x0D", short_name = "sie" },
+                [15] = { name = "Chin Gentsai", code = "0x0E", short_name = "chin" },
+                [16] = { name = "Chizuru Kagura", code = "0x0F", short_name = "chizuru" },
+                [17] = { name = "Mai Shiranui", code = "0x10", short_name = "mai", has_ex = true },
+                [18] = { name = "King", code = "0x11", short_name = "king" },
+                [19] = { name = "Kim Kaphwan", code = "0x12", short_name = "kim" },
+                [20] = { name = "Chang Koehan", code = "0x13", short_name = "chang" },
+                [21] = { name = "Choi Bounge", code = "0x14", short_name = "choi" },
+                [22] = { name = "Yashiro Nanakase", code = "0x15", short_name = "yashiro", has_ex = true },
+                [23] = { name = "Shermie", code = "0x16", short_name = "shermie", has_ex = true },
+                [24] = { name = "Chris", code = "0x17", short_name = "chris", has_ex = true },
+                [25] = { name = "Ryuji Yamazaki", code = "0x18", short_name = "ryuji" },
+                [26] = { name = "Blue Mary", code = "0x19", short_name = "mary" },
+                [27] = { name = "Billy Kane", code = "0x1A", short_name = "billy", has_ex = true },
+                [28] = { name = "Iori Yagami", code = "0x1B", short_name = "iori" },
+                [29] = { name = "Shingo Yabuki", code = "0x1C", short_name = "shingo" },
+                [30] = { name = "Orochi Iori", code = "0x1D", short_name = "o_iori", has_ex = true },
+                [31] = { name = "Orochi Leona", code = "0x1E", short_name = "o_leona", has_ex = true },
+                [32] = { name = "Orochi Yashiro", code = "0x1F", short_name = "o_yashiro" },
+                [33] = { name = "Orochi Shermie", code = "0x20", short_name = "o_shermie" },
+                [34] = { name = "Orochi Chris", code = "0x21", short_name = "o_chris" },
+                [35] = { name = "Orochi", code = "0x22", short_name = "orochi" },
+            }
+        },
+    },
     SUPPORTED_GAMES = {
         ["kof98"] = true,
         ["kof98h"] = true,
@@ -320,54 +429,16 @@ KOF_CONFIG = {
 
         }
     },
-    CHARACTERS = {
-        [1] = { name = "Kyo Kusanagi", code = "0x00", short_name = "kyo" },
-        [2] = { name = "Benimaru Nikaido", code = "0x01", short_name = "beni" },
-        [3] = { name = "Goro Daimon", code = "0x02", short_name = "goro" },
-        [4] = { name = "Terry Bogard", code = "0x03", short_name = "terry" },
-        [5] = { name = "Andy Bogard", code = "0x04", short_name = "andy" },
-        [6] = { name = "Joe Higashi", code = "0x05", short_name = "joe" },
-        [7] = { name = "Ryo Sakazaki", code = "0x06", short_name = "ryo" },
-        [8] = { name = "Robert Garcia", code = "0x07", short_name = "robert" },
-        [9] = { name = "Yuri Sakazaki", code = "0x08", short_name = "yuri" },
-        [10] = { name = "Leona", code = "0x09", short_name = "leona" },
-        [11] = { name = "Ralf Jones", code = "0x0A", short_name = "ralf" },
-        [12] = { name = "Clark Steel", code = "0x0B", short_name = "clark" },
-        [13] = { name = "Athena Asamiya", code = "0x0C", short_name = "athena" },
-        [14] = { name = "Sie Kensou", code = "0x0D", short_name = "sie" },
-        [15] = { name = "Chin Gentsai", code = "0x0E", short_name = "chin" },
-        [16] = { name = "Chizuru Kagura", code = "0x0F", short_name = "chizuru" },
-        [17] = { name = "Mai Shiranui", code = "0x10", short_name = "mai" },
-        [18] = { name = "King", code = "0x11", short_name = "king" },
-        [19] = { name = "Kim Kaphwan", code = "0x12", short_name = "kim" },
-        [20] = { name = "Chang Koehan", code = "0x13", short_name = "chang" },
-        [21] = { name = "Choi Bounge", code = "0x14", short_name = "choi" },
-        [22] = { name = "Yashiro Nanakase", code = "0x15", short_name = "yashiro" },
-        [23] = { name = "Shermie", code = "0x16", short_name = "shermie" },
-        [24] = { name = "Chris", code = "0x17", short_name = "chris" },
-        [25] = { name = "Ryuji Yamazaki", code = "0x18", short_name = "ryuji" },
-        [26] = { name = "Blue Mary", code = "0x19", short_name = "mary" },
-        [27] = { name = "Billy Kane", code = "0x1A", short_name = "billy" },
-        [28] = { name = "Iori Yagami", code = "0x1B", short_name = "iori" },
-        [29] = { name = "Mature", code = "0x1C", short_name = "mature" },
-        [30] = { name = "Vice", code = "0x1D", short_name = "vice" },
-        [31] = { name = "Heidern", code = "0x1E", short_name = "heidern" },
-        [32] = { name = "Takuma Sakazaki", code = "0x1F", short_name = "takuma" },
-        [33] = { name = "Saisyu Kusanagi", code = "0x20", short_name = "saisyu" },
-        [34] = { name = "Heavy D!", code = "0x21", short_name = "heavy" },
-        [35] = { name = "Lucky Glauber", code = "0x22", short_name = "lucky" },
-        [36] = { name = "Brian Battler", code = "0x23", short_name = "brian" },
-        [37] = { name = "Rugal Bernstein", code = "0x24", short_name = "rugal" },
-        [38] = { name = "Shingo Yabuki", code = "0x25", short_name = "shingo" },
 
-    },
+    -- Dynamic Game Mapping functions
+    get_current_game = function()
+        local rname = emu.romname and emu.romname() or "kof98"
+        return KOF_CONFIG.GAMES[rname] or KOF_CONFIG.GAMES["kof98"]
+    end,
+
     UI = {
-        CURRENT_PLAYER1 = {
-
-        },
-        CURRENT_PLAYER2 = {
-
-        },
+        CURRENT_PLAYER1 = {},
+        CURRENT_PLAYER2 = {},
         PLAYER1_EX = false,
         PLAYER2_EX = false,
         CHARACTERS_HAS_CHANGED = true,
@@ -379,6 +450,14 @@ KOF_CONFIG = {
         MODES = {
             EXTRA = 0,
             ADVANCED = 1,
+        },
+        APPLIED = {
+            PLAYER1 = nil,
+            PLAYER2 = nil,
+            PLAYER1_EX = false,
+            PLAYER2_EX = false,
+            PLAYER1_MODE = 1,
+            PLAYER2_MODE = 1,
         }
     },
     DEBUG = {
@@ -395,9 +474,9 @@ KOF_CONFIG = {
         DISTANCE = 0,
         STATE = 0,
         METER = 0,
-        FRAMEDATA = 1,
+        FRAMEDATA = 0,
     }
 
 }
-KOF_CONFIG.UI.CURRENT_PLAYER1 = KOF_CONFIG.CHARACTERS[1]
-KOF_CONFIG.UI.CURRENT_PLAYER2 = KOF_CONFIG.CHARACTERS[28]
+KOF_CONFIG.UI.CURRENT_PLAYER1 = KOF_CONFIG.get_current_game().characters[1]
+KOF_CONFIG.UI.CURRENT_PLAYER2 = KOF_CONFIG.get_current_game().characters[28]
